@@ -1,0 +1,32 @@
+{
+  "_note": "Synthetic test fixture shaped like a real buildingInsights response. Not real site data.",
+  "name": "buildings/TEST",
+  "center": {"latitude": 53.78005, "longitude": -1.53002},
+  "boundingBox": {"sw": {"latitude": 53.7799, "longitude": -1.5302}, "ne": {"latitude": 53.7802, "longitude": -1.5298}},
+  "imageryDate": {"year": 2024, "month": 6, "day": 14},
+  "imageryQuality": "HIGH",
+  "regionCode": "GB",
+  "solarPotential": {
+    "maxArrayPanelsCount": 120,
+    "maxArrayAreaMeters2": 235.42,
+    "maxSunshineHoursPerYear": 1104.6,
+    "carbonOffsetFactorKgPerMwh": 233.12,
+    "panelCapacityWatts": 400,
+    "panelHeightMeters": 1.879,
+    "panelWidthMeters": 1.045,
+    "wholeRoofStats": {"areaMeters2": 410.49, "groundAreaMeters2": 398.2, "sunshineQuantiles": [300, 700, 900, 1000, 1104]},
+    "roofSegmentStats": [
+      {"pitchDegrees": 12.31, "azimuthDegrees": 182.4,
+       "stats": {"areaMeters2": 260.1, "groundAreaMeters2": 254.1, "sunshineQuantiles": [600, 900, 1104]},
+       "center": {"latitude": 53.78, "longitude": -1.53}},
+      {"pitchDegrees": 12.29, "azimuthDegrees": 2.1,
+       "stats": {"areaMeters2": 150.39, "groundAreaMeters2": 144.1, "sunshineQuantiles": [300, 600, 780]},
+       "center": {"latitude": 53.7801, "longitude": -1.53}}
+    ],
+    "solarPanelConfigs": [
+      {"panelsCount": 4, "yearlyEnergyDcKwh": 1690.2},
+      {"panelsCount": 60, "yearlyEnergyDcKwh": 24300.7},
+      {"panelsCount": 120, "yearlyEnergyDcKwh": 41250.0}
+    ]
+  }
+}
