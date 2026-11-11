@@ -1,5 +1,8 @@
 name: tests
 on: [push, pull_request]
+defaults:
+  run:
+    working-directory: troo-solar-insights
 jobs:
   test:
     runs-on: ubuntu-latest
