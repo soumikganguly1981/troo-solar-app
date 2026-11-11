@@ -20,6 +20,7 @@ import requests
 import streamlit as st
 from streamlit_folium import st_folium
 
+import report
 import solar_core as sc
 
 st.set_page_config(page_title="Troo Solar Insights", page_icon="☀️", layout="wide")
@@ -78,6 +79,17 @@ def cached_insights(lat: float, lng: float) -> tuple[dict, str]:
     return sc.building_insights(lat, lng, API_KEY, http())
 
 
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def cached_base_map(extent: tuple) -> bytes | None:
+    return report.fetch_base_map(extent, http())
+
+
+def pdf_report(res: dict, sizing: dict | None, settings: dict, address: str, pin) -> bytes:
+    extent = tuple(round(v, 1) for v in report.map_extent(res, pin))
+    map_png = report.render_map(cached_base_map(extent), extent, res, pin)
+    return report.build_pdf(res, sizing, settings, map_png, address, pin)
+
+
 def cached_lookup(query: str) -> dict:
     geo = None
     try:
@@ -119,7 +131,7 @@ def build_map(lat, lng, result: dict | None):
 
 
 # ----------------------------------------------------------------------------- result view
-def show_result(res: dict, key_prefix: str):
+def show_result(res: dict, key_prefix: str, address: str = "", pin=None):
     if "error" in res:
         st.error(f"**{res['props']['solar_status']}**: {res['error']}")
         return
@@ -144,6 +156,7 @@ def show_result(res: dict, key_prefix: str):
     c[4].metric("Imagery quality", p["solar_imagery_quality"], delta=f"captured {x['imagery_date']}", delta_color="off")
 
     # --- sizing estimator
+    e, settings = None, {}
     if res["panel_configs"]:
         with st.expander("System sizing estimator", expanded=True):
             cfgs = res["panel_configs"]
@@ -155,11 +168,22 @@ def show_result(res: dict, key_prefix: str):
             der = d.slider("DC→AC derate", 0.70, 0.95, 0.85, 0.01, key=f"{key_prefix}_d",
                            help="Inverter + wiring losses. 0.85 is Google's default assumption.")
             e = sc.estimate(cfgs, n, x["panel_capacity_w"], w, der)
+            settings = {"panel_w": w, "derate": der}
             k = st.columns(3)
             k[0].metric("System size", f"{e['kwp']} kWp")
             k[1].metric("Yearly generation (AC est.)", f"{e['yearly_kwh_ac']:,} kWh")
             k[2].metric("CO₂ avoided / yr", f"{e['yearly_kwh_ac'] * p['solar_carbon_offset_kg_mwh'] / 1e6:,.1f} t")
             st.line_chart(pd.DataFrame(cfgs).set_index("panels")["yearly_kwh_dc"], height=200)
+
+    # --- PDF report
+    with st.spinner("Preparing PDF…"):
+        try:
+            pdf = pdf_report(res, e, settings, address or x.get("formatted_address", ""), pin)
+            slug = "".join(ch if ch.isalnum() else "_" for ch in (address or "site"))[:40].strip("_")
+            st.download_button("📄 Download PDF report", pdf, f"solar_assessment_{slug}.pdf",
+                               mime="application/pdf", type="primary", key=f"{key_prefix}_pdf")
+        except Exception as ex:  # never let the report break the results page
+            st.warning(f"PDF report unavailable: {ex}")
 
     with st.expander("Roof segments"):
         st.dataframe(pd.DataFrame(res["segments"]).drop(columns=["lat", "lng"]), hide_index=True, width="stretch")
@@ -231,7 +255,7 @@ with tab_single:
 
         if st.session_state.get("result"):
             st.divider()
-            show_result(st.session_state.result, "single")
+            show_result(st.session_state.result, "single", geo.formatted_address, (lat, lng))
 
 with tab_batch:
     st.write(f"Upload a CSV with an **address** column (or **postcode**). Add a **record_id** column holding the HubSpot "
