@@ -1,0 +1,7 @@
+streamlit>=1.46
+streamlit-folium>=0.22
+folium>=0.17
+pandas>=2.0
+requests>=2.31
+reportlab>=4.0
+Pillow>=10.0
