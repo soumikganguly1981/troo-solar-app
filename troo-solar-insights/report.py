@@ -23,7 +23,6 @@ from reportlab.platypus import Image as RLImage
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 R = 6378137.0
-ESRI_EXPORT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export"
 MAP_W, MAP_H = 1200, 780
 BRAND = colors.HexColor("#0B3D5C")
 ACCENT = colors.HexColor("#F2A900")
@@ -56,16 +55,63 @@ def map_extent(result: dict, pin: tuple[float, float] | None) -> tuple[float, fl
     return cx - half_w, cy - half_h, cx + half_w, cy + half_h
 
 
-def fetch_base_map(extent, session: requests.Session | None = None) -> bytes | None:
-    s = session or requests
+TILE_URL = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+TILE = 256
+MAX_TILE_ZOOM = 19
+HEADERS = {"User-Agent": "TrooSolarInsights/1.0 (internal ES tool)"}
+WORLD = 2 * math.pi * R
+
+
+def tile_coords(mx: float, my: float, z: int) -> tuple[float, float]:
+    """Mercator metres -> fractional slippy-map tile coordinates at zoom z."""
+    n = 2 ** z
+    return (mx + WORLD / 2) / WORLD * n, (WORLD / 2 - my) / WORLD * n
+
+
+def pick_zoom(extent) -> int:
+    width_m = extent[2] - extent[0]
+    z = math.ceil(math.log2(WORLD * MAP_W / (TILE * width_m)))
+    return max(1, min(MAX_TILE_ZOOM, z))
+
+
+def _get_tile(s, z, x, y):
     try:
-        r = s.get(ESRI_EXPORT, timeout=15, params={
-            "bbox": ",".join(f"{v:.2f}" for v in extent), "bboxSR": 3857, "imageSR": 3857,
-            "size": f"{MAP_W},{MAP_H}", "format": "png", "f": "image"})
+        r = s.get(TILE_URL.format(z=z, x=x, y=y), headers=HEADERS, timeout=10)
         if r.ok and r.headers.get("content-type", "").startswith("image"):
-            return r.content
+            return Image.open(io.BytesIO(r.content)).convert("RGB")
     except Exception:
         pass
+    return None
+
+
+def fetch_base_map(extent, session: requests.Session | None = None) -> bytes | None:
+    """Stitch Esri World Imagery tiles covering the extent, crop and resize to MAP_W x MAP_H.
+
+    Uses the same tile service as the on-screen map. Returns None if imagery can't be fetched.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    s = session or requests
+    xmin, ymin, xmax, ymax = extent
+    for z in (pick_zoom(extent), pick_zoom(extent) - 1):
+        fx0, fy0 = tile_coords(xmin, ymax, z)  # top-left
+        fx1, fy1 = tile_coords(xmax, ymin, z)  # bottom-right
+        tx0, ty0, tx1, ty1 = int(fx0), int(fy0), int(fx1), int(fy1)
+        tiles = [(x, y) for y in range(ty0, ty1 + 1) for x in range(tx0, tx1 + 1)]
+        if len(tiles) > 80:
+            continue
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            imgs = list(pool.map(lambda t: _get_tile(s, z, *t), tiles))
+        if sum(i is None for i in imgs) > len(imgs) // 4:   # too many gaps -> try one zoom out
+            continue
+        canvas = Image.new("RGB", ((tx1 - tx0 + 1) * TILE, (ty1 - ty0 + 1) * TILE), (225, 228, 232))
+        for (x, y), im in zip(tiles, imgs):
+            if im is not None:
+                canvas.paste(im.resize((TILE, TILE)), ((x - tx0) * TILE, (y - ty0) * TILE))
+        box = ((fx0 - tx0) * TILE, (fy0 - ty0) * TILE, (fx1 - tx0) * TILE, (fy1 - ty0) * TILE)
+        out = io.BytesIO()
+        canvas.crop(tuple(round(v) for v in box)).resize((MAP_W, MAP_H), Image.LANCZOS).save(out, "PNG")
+        return out.getvalue()
     return None
 
 

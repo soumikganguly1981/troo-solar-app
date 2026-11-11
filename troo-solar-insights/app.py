@@ -80,8 +80,18 @@ def cached_insights(lat: float, lng: float) -> tuple[dict, str]:
 
 
 @st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def _cached_base_map(extent: tuple) -> bytes:
+    png = report.fetch_base_map(extent, http())
+    if png is None:
+        raise RuntimeError("imagery unavailable")  # exceptions aren't cached, so it retries next time
+    return png
+
+
 def cached_base_map(extent: tuple) -> bytes | None:
-    return report.fetch_base_map(extent, http())
+    try:
+        return _cached_base_map(extent)
+    except RuntimeError:
+        return None
 
 
 def pdf_report(res: dict, sizing: dict | None, settings: dict, address: str, pin) -> bytes:
